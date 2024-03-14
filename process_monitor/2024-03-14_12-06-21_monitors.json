@@ -1,0 +1,34 @@
+{
+  "monitors": [
+    {
+      "name": "Custom Monitor - 1",
+      "script": "scripts/disk.sh",
+      "monitor_id": null,
+      "result": {
+        "value": -873173650,
+        "processed_at": 1710417951
+      },
+      "code": "b876488e681f4b4789acee05fc3fd5d4"
+    },
+    {
+      "name": "Local Monitor - 1",
+      "script": null,
+      "monitor_id": 467,
+      "result": {
+        "value": 864250795,
+        "processed_at": 1710417951
+      },
+      "code": "cc07e0296ec32cb904ccc162682e36fe"
+    },
+    {
+      "name": "Local Monitor - 2",
+      "script": "scripts/mem.sh",
+      "monitor_id": 468,
+      "result": {
+        "value": -1010806869,
+        "processed_at": 1710417951
+      },
+      "code": "9f0d2fc5dec3f5e604747caf0704b402"
+    }
+  ]
+}

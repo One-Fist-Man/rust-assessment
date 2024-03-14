@@ -1,81 +1,121 @@
 use serde::{Deserialize, Serialize};
-use std::{env, fs, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    env,
+    fs,
+    io::{self, Write},
+    // path::Path,
+    sync::{Arc, Mutex},
+    thread,
+    time::{SystemTime, UNIX_EPOCH, Duration},
+};
 use serde_json;
 
-#[derive(Serialize, Deserialize)] // Implement Serialize and Deserialize traits
+#[derive(Serialize, Deserialize)]
 struct Monitor {
     name: String,
     script: Option<String>,
     monitor_id: Option<u32>,
     #[serde(default)]
-    result: Option<Result>, // Include Result as an option
+    result: Option<Result>, 
     code: String,
 }
 
-// #[derive(Serialize)] // Implement Serialize trait
-#[derive(Serialize, Deserialize)]  //Implement Serialize and Deserialize traits
+#[derive(Serialize, Deserialize)]
 struct Result {
     value: i32,
     processed_at: u64,
 }
 
-#[derive(Serialize, Deserialize)] // Implement Serialize and Deserialize traits
+#[derive(Serialize, Deserialize)]
 struct Monitors {
     monitors: Vec<Monitor>,
 }
 
-fn main() {
-    //  Process command line arguments
+fn process_args() -> Option<String> {
     let args: Vec<String> = env::args().collect();
-    let mut monitor_file = None;
-    for i in 0..args.len() {
-        if args[i] == "-monitorFile" && i < args.len() - 1 {
-            monitor_file = Some(args[i + 1].clone());
-            break;
+    for (i, arg) in args.iter().enumerate() {
+        if arg == "-monitorFile" && i < args.len() - 1 {
+            return Some(args[i + 1].clone());
         }
     }
+    None
+}
 
-    let monitor_file = match monitor_file {
+fn read_monitors_json(file_path: &str) -> io::Result<Monitors> {
+    let file_content = fs::read_to_string(file_path)?;
+    let monitors_data = serde_json::from_str(&file_content)?;
+    Ok(monitors_data)
+}
+
+fn update_monitor_results(monitors: &mut Monitors) {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs();
+    for monitor in &mut monitors.monitors {
+        let result = Result {
+            value: rand::random::<i32>(),
+            processed_at: now,
+        };
+        monitor.result = Some(result);
+    }
+}
+
+fn store_monitors(monitors: &Monitors) -> io::Result<()> {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs();
+    let formatted_time = timestamp_to_human_readable(timestamp);
+    let filename = format!("{}_monitors.json", formatted_time);
+    let data = serde_json::to_string_pretty(monitors)?;
+    let mut file = fs::File::create(filename)?;
+    file.write_all(data.as_bytes())?;
+    Ok(())
+}
+
+fn timestamp_to_human_readable(timestamp: u64) -> String {
+    let dt = UNIX_EPOCH + Duration::from_secs(timestamp);
+    let datetime = chrono::DateTime::<chrono::Utc>::from(dt);
+    datetime.format("%Y-%m-%d_%H-%M-%S").to_string()
+}
+
+fn process_monitors(monitors: Monitors) -> io::Result<()> {
+    let monitors_arc = Arc::new(Mutex::new(monitors));
+    let start_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs();
+
+    loop {
+        update_monitor_results(&mut monitors_arc.lock().unwrap());
+        thread::sleep(Duration::from_secs(30));
+
+        let current_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs();
+        if current_time - start_time >= 300 {
+            break;
+        }
+
+        store_monitors(&monitors_arc.lock().unwrap())?;
+    }
+
+    Ok(())
+}
+
+fn main() -> io::Result<()> {
+    let monitor_file = match process_args() {
         Some(path) => path,
         None => {
             eprintln!("Error: Missing required argument -monitorFile");
-            return;
+            return Ok(());
         }
     };
 
-    // Read JSON file and deserialize it into data structure
-    let file_content = match fs::read_to_string(&monitor_file) {
-        Ok(content) => content,
-        Err(err) => {
-            eprintln!("Error reading file {}: {}", monitor_file, err);
-            return;
-        }
-    };
+    let monitors_data = read_monitors_json(&monitor_file)?;
+    process_monitors(monitors_data)?;
 
-    let mut monitors_data: Monitors = match serde_json::from_str(&file_content) {
-        Ok(data) => data,
-        Err(err) => {
-            eprintln!("Error parsing JSON data: {}", err);
-            return;
-        }
-    };
-
-    //  Generate and assign results for each monitor
-    for monitor in &mut monitors_data.monitors {
-        monitor.result = Some(Result {
-            value: rand::random::<i32>(),
-            processed_at: SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs(),
-        });
-    }
-
-    // Convert results to JSON
-    let json_results = match serde_json::to_string_pretty(&monitors_data) {
-        Ok(json) => json,
-        Err(err) => {
-            eprintln!("Error converting results to JSON: {}", err);
-            return;
-        }
-    };
-
-    println!("{}", json_results);
+    Ok(())
 }
